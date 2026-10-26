@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>My AI Video Studio</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#08080a;color:#f4f4f5;font-family:Inter,system-ui,Arial,sans-serif}
+.wrap{max-width:820px;margin:0 auto;padding:32px 18px 70px}
+h1{font-size:30px;margin:0 0 8px}
+p{color:#a1a1aa}
+.card{background:#14141a;border:1px solid #2a2a33;border-radius:20px;padding:22px}
+label{display:block;margin:16px 0 7px;font-size:14px}
+textarea,select{width:100%;background:#0c0c10;border:1px solid #2a2a33;color:#fff;border-radius:12px;padding:13px;font-size:15px}
+textarea{min-height:140px;resize:vertical}
+button{margin-top:18px;width:100%;border:0;border-radius:12px;padding:15px;font-size:16px;font-weight:700;color:#fff;background:linear-gradient(120deg,#7c3aed,#d946ef,#f97316);cursor:pointer}
+button:disabled{opacity:.55;cursor:not-allowed}
+.status{margin-top:14px;color:#a1a1aa;font-size:14px}
+video{margin-top:22px;width:100%;border-radius:16px;background:#000}
+a.download{display:inline-block;margin-top:14px;color:#c4b5fd;text-decoration:none;font-weight:600}
+.error{color:#fca5a5}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>My AI Video Studio</h1>
+<p>Type any idea and turn it into a real AI video.</p>
+
+<div class="card">
+<label>Video prompt</label>
+<textarea id="prompt" placeholder="A cinematic drone shot flying over a futuristic city at sunset, flying cars, realistic lighting, smooth camera movement."></textarea>
+
+<label>Video length</label>
+<select id="duration">
+<option value="5">5 seconds</option>
+<option value="10">10 seconds</option>
+</select>
+
+<label>Aspect ratio</label>
+<select id="ratio">
+<option value="1280:720">16:9 Landscape</option>
+<option value="720:1280">9:16 Vertical</option>
+<option value="960:960">1:1 Square</option>
+</select>
+
+<button id="generateBtn">Generate AI video</button>
+<div class="status" id="status">Enter a prompt to begin.</div>
+<div id="result"></div>
+</div>
+</div>
+
+<script>
+const btn=document.getElementById('generateBtn');
+const statusEl=document.getElementById('status');
+const result=document.getElementById('result');
+
+btn.onclick=async()=>{
+  const prompt=document.getElementById('prompt').value.trim();
+  const duration=parseInt(document.getElementById('duration').value);
+  const ratio=document.getElementById('ratio').value;
+
+  if(prompt.length<5){statusEl.textContent='Please write a longer prompt.';return}
+
+  btn.disabled=true;
+  statusEl.textContent='Submitting your video request...';
+  result.innerHTML='';
+
+  try{
+    const response=await fetch('/api/generate',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({prompt,duration,ratio})
+    });
+    const data=await response.json();
+
+    if(!response.ok){
+      statusEl.textContent=data.detail||'Generation failed.';
+      btn.disabled=false;
+      return;
+    }
+
+    statusEl.textContent='Your video is generating. This usually takes a few minutes.';
+    poll(data.job_id);
+  }catch(e){
+    statusEl.textContent='Network error. Please try again.';
+    btn.disabled=false;
+  }
+};
+
+async function poll(jobId){
+  const timer=setInterval(async()=>{
+    try{
+      const response=await fetch('/api/status/'+jobId);
+      const data=await response.json();
+
+      if(data.status==='completed'&&data.video_url){
+        clearInterval(timer);
+        statusEl.textContent='Your video is ready!';
+        result.innerHTML=`
+          <video controls src="${data.video_url}"></video>
+          <a class="download" href="${data.video_url}" target="_blank" download>Download video</a>
+        `;
+        btn.disabled=false;
+      }else if(data.status==='failed'){
+        clearInterval(timer);
+        statusEl.textContent=data.error||'Generation failed.';
+        statusEl.classList.add('error');
+        btn.disabled=false;
+      }else{
+        statusEl.textContent='Generating your AI video...';
+      }
+    }catch(e){
+      clearInterval(timer);
+      statusEl.textContent='Lost connection while checking your video.';
+      btn.disabled=false;
+    }
+  },5000);
+}
+</script>
+</body>
+</html>

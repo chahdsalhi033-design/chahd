@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TextToVideo Studio</title>
+<style>
+:root{--bg:#08080a;--card:#14141a;--line:#2a2a33;--text:#f4f4f5;--muted:#a1a1aa;--accent:#8b5cf6}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Arial,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:28px 18px 60px}
+h1{font-size:28px;margin:0 0 6px}
+p.sub{color:var(--muted);margin:0 0 22px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px}
+label{display:block;font-size:14px;margin:14px 0 6px}
+textarea,input,select{width:100%;background:#0c0c10;border:1px solid var(--line);color:var(--text);border-radius:12px;padding:12px;font-size:15px}
+textarea{min-height:130px;resize:vertical}
+button{margin-top:18px;width:100%;border:0;border-radius:12px;padding:14px;font-size:16px;font-weight:700;color:#fff;background:linear-gradient(120deg,#7c3aed,#d946ef,#f97316);cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+.scene{margin-top:18px;padding:16px;border-radius:14px;background:#101017;border:1px solid var(--line)}
+.scene h3{margin:0 0 6px;font-size:15px;color:var(--muted)}
+#stage{margin-top:20px;aspect-ratio:16/9;background:#000;border-radius:16px;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;text-align:center;padding:30px}
+#stageText{font-size:clamp(20px,4vw,42px);font-weight:800;line-height:1.2;max-width:80%;z-index:2;text-shadow:0 4px 30px rgba(0,0,0,.6)}
+.bg{position:absolute;inset:-40%;background:conic-gradient(from 0deg,#7c3aed,#d946ef,#f97316,#22d3ee,#7c3aed);filter:blur(90px);opacity:.35;animation:spin 18s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.controls{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.controls button{width:auto;margin:0;padding:10px 16px;font-size:14px;background:#26262f}
+.status{margin-top:12px;color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>TextToVideo Studio</h1>
+<p class="sub">Type a script. Each line becomes a video scene with animated visuals and voiceover.</p>
+
+<div class="card">
+<label>Paste your video script</label>
+<textarea id="script" placeholder="A futuristic city rises above the clouds at sunset.&#10;Flying cars move between glowing towers.&#10;The camera flies toward the sun."></textarea>
+
+<label>Voice</label>
+<select id="voice"></select>
+
+<label>Speaking speed</label>
+<input id="rate" type="range" min="0.6" max="1.4" step="0.1" value="1">
+
+<button id="playBtn">Play with voiceover</button>
+<div class="controls">
+<button id="pauseBtn">Pause</button>
+<button id="resumeBtn">Resume</button>
+<button id="stopBtn">Stop</button>
+<button id="exportBtn">Export video</button>
+</div>
+<div class="status" id="status">Ready.</div>
+</div>
+
+<div id="stage">
+<div class="bg"></div>
+<div id="stageText">Your video preview appears here</div>
+</div>
+</div>
+
+<script>
+const stageText=document.getElementById('stageText');
+const statusEl=document.getElementById('status');
+const voiceSelect=document.getElementById('voice');
+let scenes=[],current=0,playing=false;
+
+function loadVoices(){
+  const voices=speechSynthesis.getVoices();
+  voiceSelect.innerHTML='';
+  voices.forEach((v,i)=>{
+    const o=document.createElement('option');
+    o.value=i;o.textContent=v.name+' ('+v.lang+')';
+    voiceSelect.appendChild(o);
+  });
+}
+speechSynthesis.onvoiceschanged=loadVoices;
+loadVoices();
+
+function showScene(i){
+  stageText.textContent=scenes[i];
+  stageText.animate([{opacity:0,transform:'translateY(18px)'},{opacity:1,transform:'translateY(0)'}],{duration:700,easing:'ease-out'});
+}
+
+function speak(i){
+  if(i>=scenes.length){playing=false;statusEl.textContent='Finished.';return}
+  current=i;
+  showScene(i);
+  const u=new SpeechSynthesisUtterance(scenes[i]);
+  const voices=speechSynthesis.getVoices();
+  u.voice=voices[voiceSelect.value];
+  u.rate=parseFloat(document.getElementById('rate').value);
+  u.onend=()=>{if(playing)setTimeout(()=>speak(i+1),700)};
+  speechSynthesis.speak(u);
+}
+
+document.getElementById('playBtn').onclick=()=>{
+  const text=document.getElementById('script').value.trim();
+  if(!text){statusEl.textContent='Please enter a script first.';return}
+  scenes=text.split(/\n+/).map(s=>s.trim()).filter(Boolean);
+  playing=true;current=0;
+  statusEl.textContent='Playing '+scenes.length+' scene(s).';
+  speechSynthesis.cancel();
+  speak(0);
+};
+document.getElementById('pauseBtn').onclick=()=>{speechSynthesis.pause();statusEl.textContent='Paused.'};
+document.getElementById('resumeBtn').onclick=()=>{speechSynthesis.resume();statusEl.textContent='Playing.'};
+document.getElementById('stopBtn').onclick=()=>{playing=false;speechSynthesis.cancel();statusEl.textContent='Stopped.'};
+document.getElementById('exportBtn').onclick=async()=>{
+  try{
+    const stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
+    const rec=new MediaRecorder(stream,{mimeType:'video/webm'});
+    const chunks=[];
+    rec.ondataavailable=e=>chunks.push(e.data);
+    rec.onstop=()=>{
+      const blob=new Blob(chunks,{type:'video/webm'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download='text-to-video-studio.webm';
+      a.click();
+      stream.getTracks().forEach(t=>t.stop());
+      statusEl.textContent='Video exported.';
+    };
+    rec.start();
+    statusEl.textContent='Recording. Press Play with voiceover, then press Export video again to stop.';
+    document.getElementById('exportBtn').onclick=()=>{rec.stop();statusEl.textContent='Stopping recording...'};
+  }catch(e){statusEl.textContent='Recording was cancelled or is not supported.'}
+};
+</script>
+</body>
+</html>
